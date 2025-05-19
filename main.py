@@ -2,9 +2,10 @@ from fastapi import FastAPI
 import openai
 from dotenv import load_dotenv
 import os
-import json
-import random
 import requests
+import json
+from typing import Dict, List, Any
+import time  # Add this import
 
 # Load environment variables from .env
 load_dotenv()
@@ -14,41 +15,45 @@ USDA_API_KEY = os.getenv("USDA_API_KEY")
 # Create FastAPI app
 app = FastAPI()
 
-# Load exercise data from exercises.json
-with open("exercises.json", "r") as file:
-    exercises = json.load(file)
-
 # Endpoint for motivation (using OpenAI)
 @app.get("/motivate")
 def motivate(goal: str = "stay fit"):
     prompt = f"Give a short motivational message for someone trying to {goal}."
     response = openai.chat.completions.create(
-    model="gpt-4",
-    messages=[{"role": "user", "content": prompt}],
-    max_tokens=50
-)
+        model="gpt-4",
+        messages=[{"role": "user", "content": prompt}],
+        max_tokens=50
+    )
     return {"message": response.choices[0].message.content}
 
-# Endpoint for fitness plan (using exercises.json)
+# Endpoint for fitness plan (using OpenAI)
 @app.get("/fitness-plan")
 def fitness_plan(equipment: str = "none"):
-    # Debug: Print the first few entries to see the structure
-    print(f"Sample exercises: {exercises[:3]}")
-    
-    # Normalize equipment field, handle None, and match more flexibly
-    filtered = [
-        ex for ex in exercises 
-        if isinstance(ex.get("equipment"), str) and 
-        (equipment.lower() in ex.get("equipment", "").lower() or 
-         ex.get("equipment", "").lower() in ["none", "bodyweight", "no equipment", "body only"])
-    ]
-    
-    # If no matches, return a default message
-    if not filtered:
-        return {"plan": [], "message": "No exercises found for the specified equipment. Try 'dumbbell', 'bodyweight', or 'none'."}
-    
-    selected = random.sample(filtered, min(3, len(filtered)))
-    return {"plan": [{"name": ex["name"], "instructions": ex.get("instructions", "No instructions available")} for ex in selected]}
+    # Add timestamp to prompt for variability
+    timestamp = int(time.time())
+    prompt = (
+        f"Create a fitness plan with 3 unique exercises for someone using {equipment} equipment at timestamp {timestamp}. "
+        f"Ensure the exercises are varied each time this prompt is run by selecting different, less common exercises "
+        f"(avoid overused exercises like push-ups and squats unless specifically requested). "
+        f"For each exercise, provide the name and a short list of instructions (2-4 steps). "
+        f"Return the response as a JSON object with a 'plan' key, where the value is an array of exercises, "
+        f"each with 'name' and 'instructions' keys."
+    )
+    try:
+        response = openai.chat.completions.create(
+            model="gpt-4",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=300
+        )
+        # Type hint for clarity
+        result: str = response.choices[0].message.content
+        # Parse the JSON response
+        parsed_response: Dict[str, List[Dict[str, Any]]] = json.loads(result)
+        if "plan" not in parsed_response:
+            return {"error": "OpenAI response missing 'plan' key"}
+        return parsed_response
+    except (json.JSONDecodeError, KeyError, ValueError) as e:
+        return {"error": f"Failed to parse OpenAI response: {str(e)}"}
 
 # Endpoint for food plan (using USDA API)
 @app.get("/food-plan")
