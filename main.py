@@ -32,9 +32,23 @@ def motivate(goal: str = "stay fit"):
 # Endpoint for fitness plan (using exercises.json)
 @app.get("/fitness-plan")
 def fitness_plan(equipment: str = "none"):
-    filtered = [ex for ex in exercises if equipment.lower() in ex.get("equipment", "").lower()]
+    # Debug: Print the first few entries to see the structure
+    print(f"Sample exercises: {exercises[:3]}")
+    
+    # Normalize equipment field, handle None, and match more flexibly
+    filtered = [
+        ex for ex in exercises 
+        if isinstance(ex.get("equipment"), str) and 
+        (equipment.lower() in ex.get("equipment", "").lower() or 
+         ex.get("equipment", "").lower() in ["none", "bodyweight", "no equipment", "body only"])
+    ]
+    
+    # If no matches, return a default message
+    if not filtered:
+        return {"plan": [], "message": "No exercises found for the specified equipment. Try 'dumbbell', 'bodyweight', or 'none'."}
+    
     selected = random.sample(filtered, min(3, len(filtered)))
-    return {"plan": [{"name": ex["name"], "instructions": ex["instructions"]} for ex in selected]}
+    return {"plan": [{"name": ex["name"], "instructions": ex.get("instructions", "No instructions available")} for ex in selected]}
 
 # Endpoint for food plan (using USDA API)
 @app.get("/food-plan")
